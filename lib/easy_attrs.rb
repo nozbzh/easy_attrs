@@ -101,7 +101,7 @@ module EasyAttrs
     #
     def all_attributes
       @_all_attributes ||= begin
-        attributes = []
+        attributes_set = Set.new # Use a set to avoid duplicates
 
         # Yes, this is a nested loop.
         # The result is memoized so it only happens when the first instance of
@@ -114,12 +114,12 @@ module EasyAttrs
             i_var_from_ancestor = a.instance_variable_get("@#{i_var}")
 
             if i_var_from_ancestor
-              attributes.concat(i_var_from_ancestor)
+              attributes_set.merge(i_var_from_ancestor)
             end
           end
         end
 
-        attributes
+        attributes_set
       end
     end
 

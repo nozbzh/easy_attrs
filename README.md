@@ -1,8 +1,13 @@
 
+
 # EasyAttrs
 
 ## Why EasyAttrs?
-The goal of EasyAttrs is to facilitate object instantiation with, you guessed it, attributes. More specifically, EasyAttrs was first built to deal with very large JSON response from an external API where the application only needed some of the attributes in that JSON and the number of keys in the JSON could change at any time.
+Have you ever had to build objects from an API response and thought "there has to be an easier way"?
+
+EasyAttrs takes care of the boilerplate code of setting instance variables and defining `attr_*` methods (`attr_reader`, `attr_writer`, `attr_accessor`) so you can focus on writing your core business logic.
+
+Objects built with EasyAttrs can be passed a JSON string or a simple Ruby Hash.
 
 I often find that a good example is worth a thousand words so here goes.
 
@@ -24,11 +29,15 @@ end
 
 obj = MyObject.new(1, 'object', '123 infinite loop\n94100 San Francisco')
 
+# This initialize is fragile and will break unless the right number of arguments is passed.
 MyObject.new(1, 'object')
 => ArgumentError: wrong number of arguments
 
 MyObject.new(1, 'object', 'address', 'status')
 => ArgumentError: wrong number of arguments
+
+# Of course this can be fixed by passing a hash to initialize, but you still have to assign
+# each instance variable one by one.
 ```
 
 EasyAttrs makes all this boilerplate code go away, saving you time so you can focus on the core business logic.
@@ -46,6 +55,18 @@ class MyEasyObject
 end
 
 easy_obj = MyEasyObject.new(id: 1, name: 'easy', address: '123 infinite loop\n94100 San Francisco')
+# or
+json = {id: 1, name: 'easy', address: '123 infinite loop\n94100 San Francisco'}.to_json
+easy_obj = MyEasyObject.new(json)
+
+easy_obj.id
+=> 1
+easy_obj.name
+=> 'easy'
+easy_obj.address
+=> NoMethodError
+easy_obj.street_address
+=> '123 infinite loop'
 
 # Any number of arguments is valid
 MyEasyObject.new(id: 1)
@@ -77,11 +98,17 @@ Specify the `instance_variables_only`, `accessors`, `writers` and `readers` the 
      readers :id, :name
    end
 ```
-This will create the `id` and `name` readers on the class based on the raw_input and every other key in the input will be unused.
+This will create the `id` and `name` readers on the class based on the raw_input and every other key in the input will be discarded, making the object lightweight.
 ```ruby
 $ json = {id: 1, name: 'Bugs Bunny', other_key: 'other_value'}.to_json
-$ Bunny.new(json)
+$ b = Bunny.new(json)
 => #<Bunny:0x007faef0f2f930 @id=1, @name="Bugs Bunny">
+b.id
+=> 1
+b.name
+=> 'Bugs Bunny`
+b.other_key
+=> NoMethodError
 ```
 
 Here is a slightly more complex example with `@instance_variables_only`:
@@ -90,7 +117,7 @@ Here is a slightly more complex example with `@instance_variables_only`:
 class Ghost
   include EasyAttrs
 
-  readers :id, :category
+  readers :id, :age
   accessors :name
   instance_variables_only :nested_data
 
@@ -100,6 +127,22 @@ class Ghost
     end
   end
 end
+
+attributes = {id:  1, name:  'Casper', age:  150, nested_data: {family_members: ['old ghost', 'older ghost']}}
+g = Ghost.new(attributes)
+g.id
+=> 1
+g.age
+=> 150
+g.name
+=> 'Casper'
+g.name = 'old casper'
+g.name
+=> 'old casper'
+g.family_members
+=> NoMethodError
+g.family
+=> ['OLD GHOST', 'OLDER GHOST']
 ```
 Note how `instance_variables_only` is used for `:nested_data`. We want to use the data contained under the nested_data key in the raw_input but we want to transform the data before exposing it to the outside world. The transformation is done in the `family` public method.
 
@@ -115,8 +158,7 @@ end
 class BetterGhost < Ghost
   accessors :age
 end
-```
-```ruby
+
 $ BetterGhost.new(id: 1, name: 'Better Ghost', age: 250)
 => #<BetterGhost:0x007faef0f2f930 @id=1, @name="Better Ghost", @age=250>
 ```
@@ -124,14 +166,12 @@ $ BetterGhost.new(id: 1, name: 'Better Ghost', age: 250)
 class EvenBetterGhost < BetterGhost
   readers :category
 end
-```
-```ruby
+
 $ EvenBetterGhost.new(id: 1, name: 'Better Ghost', age: 250, category: 'BOOOH')
 => #<EvenBetterGhost:0x007fbb10371978 @category="BOOOH", @id=1, @name="Better Ghost", @age=250>
 ```
 
-Note on input format:
-Classes including EasyAttrs can be initialized with the following:
+Note on input format. Classes including EasyAttrs can be initialized with the following:
  - A regular `Hash` with symbol keys
  - A regular `Hash` with string keys
  - A regular `Hash` with camel case keys
@@ -141,11 +181,11 @@ Classes including EasyAttrs can be initialized with the following:
 In all cases, the input will be converted to a `Hash` with snake case symbols as keys.
 
 ## Going further
-In this section I'll describe how I used EasyAttrs in a real world, Production application.
+In this section I'll describe how I used EasyAttrs in a real world production application.
 
-The problem I was trying to solve is the one I described in the # WHY section (to deal with very large JSON response from an external API where the application only needed some of the attributes in that JSON and the number of keys in the JSON could change at any time).
+The problem I was trying to solve is the one I described in the [Why EasyAttrs](https://github.com/nozbzh/easy_attrs#why-easyattrs) section (build objects from an API response). More specifically, I had to deal with very large JSON responses from an external API where the application only needed some of the attributes in that JSON and the number of keys in the JSON could change at any time.
 
-I was working with an API to read and write objects which had no data validation on writes and returned very large objects on reads. This was inside a Rails application so I wanted ActiveRecord-like behavior. I created a `MyAppBase` class that all my models would inherit from (think `ActiveRecord::Base`) where I included all the modules I needed. It looked roughly like this:
+The API I was working with let me read and write objects but it had no data validation on writes and returned very large objects on reads. This was inside a Rails application so I wanted ActiveRecord-like behavior. I created a `MyAppBase` class that all my models would inherit from (think `ActiveRecord::Base`) where I included all the modules I needed. It looked roughly like this:
 ```ruby
 class MyAppBase
   include ActiveModel::Dirty
@@ -155,7 +195,7 @@ class MyAppBase
   include EasyAttrs
 end
 ```
-Here we're getting validations "for free" by simply using `ActiveModel::Validations` and I also needed to track object changes for auditing purposes so I included `ActiveModel::Dirty`.
+Here we're getting validations "for free" by simply using `ActiveModel::Validations` and I also needed to track object changes for auditing purposes so I included `ActiveModel::Dirty` (it lets you call `my_model.changes` to see all the object changes).
 
 The data access layer was provided by `MyApiClient` which was simply calling the API and returning raw JSON. See a stripped down version below:
 ```ruby
@@ -178,7 +218,6 @@ end
 Finally here's an example of a class to tie it all together:
 ```ruby
 class Bunny < MyAppBase
-
   GET_URI = '/bunny'
 
   readers :id, :name, :number_of_ears
