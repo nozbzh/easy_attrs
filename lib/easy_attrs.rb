@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require 'active_support'
-require 'active_support/core_ext/hash/keys'
-require 'active_support/core_ext/string/inflections'
 #
 # This module is meant to be used for objects being initialized with either raw
 # JSON or a regular Hash as opposed to a database row (like sub classes of
@@ -93,9 +90,14 @@ require 'active_support/core_ext/string/inflections'
 #     >
 #
 
+require 'active_support'
+require 'active_support/core_ext/hash/keys'
+require 'active_support/core_ext/string/inflections'
+require 'macros_definition/attrs_methods'
+require 'macros_definition/custom_methods'
+
 module EasyAttrs
   module ClassMethods
-
     # `all_attributes` needs to be public for instances to call it in
     # `intialize`.
     #
@@ -110,7 +112,11 @@ module EasyAttrs
         # depending on the class hierarchy of the applicaton using EasyAttrs).
         #
         easy_attrs_ancestors.each do |a|
-          [:readers, :writers, :accessors, :instance_variables_only].each do |i_var|
+
+          (
+            MacrosDefinition::AttrsMethods.names +
+            MacrosDefinition::CustomMethods.names
+          ).each do |i_var|
             i_var_from_ancestor = a.instance_variable_get("@#{i_var}")
 
             if i_var_from_ancestor
@@ -125,40 +131,6 @@ module EasyAttrs
 
     private
 
-    def readers *attrs
-      unless attrs.empty?
-        @readers = attrs
-
-        class_eval do
-          attr_reader *attrs
-        end
-      end
-    end
-
-    def writers *attrs
-      unless attrs.empty?
-        @writers = attrs
-
-        class_eval do
-          attr_writer *attrs
-        end
-      end
-    end
-
-    def accessors *attrs
-      unless attrs.empty?
-        @accessors = attrs
-
-        class_eval do
-          attr_accessor *attrs
-        end
-      end
-    end
-
-    def instance_variables_only *attrs
-      @instance_variables_only = attrs unless attrs.empty?
-    end
-
     # The ancestor chain includes `self`, which is exactly what we want in this
     # case because we want to grab all the class instance variables of all the
     # ancestors AND tose of the current class so we can find all attributes to
@@ -170,6 +142,8 @@ module EasyAttrs
   end
 
   def self.included klass
+    klass.extend MacrosDefinition::AttrsMethods
+    klass.extend MacrosDefinition::CustomMethods
     klass.extend ClassMethods
   end
 
