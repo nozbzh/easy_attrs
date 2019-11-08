@@ -1,5 +1,4 @@
 
-
 # EasyAttrs
 
 ## Why EasyAttrs?
@@ -8,6 +7,11 @@ Have you ever had to build objects from an API response and thought "there has t
 EasyAttrs takes care of the boilerplate code of setting instance variables and defining `attr_*` methods (`attr_reader`, `attr_writer`, `attr_accessor`) so you can focus on writing your core business logic.
 
 Objects built with EasyAttrs can be passed a JSON string or a simple Ruby Hash.
+
+If you're thinking "This sounds like `ActiveModel`" you're not far off. `ActiveModel` comes with a lot of great modules and I love it (see the [Going Further](#going-further) section below). But what if you don't need all those modules? Then EasyAttrs could be exactly what you need.
+
+Another reason why `ActiveModel` did not solve the problem I was facing is that it will raise an error when passed a key that is not defined as an `accessor`. I wanted my objects to select the relevant attributes from the input and discard the rest.
+This is for 2 reasons: 1) the API I was working with was liable to add/remove keys irrelevant to my use case and I didn't want to have to deploy new code every time it happened and 2) if an API returns an object with 30 keys and I only need 3, why would I store all those useless key/values pairs in memory?
 
 I often find that a good example is worth a thousand words so here goes.
 
@@ -39,8 +43,25 @@ MyObject.new(1, 'object', 'address', 'status')
 # Of course this can be fixed by passing a hash to initialize, but you still have to assign
 # each instance variable one by one.
 ```
+It can be made much more compact with `ActiveModel` (note that every attribute *has* to be defined as an accessor so there is no out of the box read_only or write_only):
+```ruby
+class MyActiveObject
+  include ActiveModel::Model
+  attr_accessor :id, :name, :address
+	
+  def street_address
+    @address.split('\n').first if @address
+  end
+end
 
-EasyAttrs makes all this boilerplate code go away, saving you time so you can focus on the core business logic.
+active_obj = MyActiveObject.new(id: 1, name: 'active', address: '123 infinite loop\n94100 San Francisco')
+
+# Unfortunately, it raises an error when an unknown key is part of the input
+MyActiveObject.new(id: 1, name: 'active', address: '123 infinite loop\n94100 San Francisco', age: 75)
+=> ActiveModel::UnknownAttributeError: unknown attribute 'age' for MyActiveObject.
+```
+
+EasyAttrs makes all this boilerplate code go away (just like `ActiveModel`), but it also allows you to define read_only/write_only attributes as well as plain old instance variables that you can reuse in your custom methods. And it doesn't raise an error when an unknown key is passed.
 
 ```ruby
 class MyEasyObject
@@ -77,7 +98,7 @@ EasyAttrs only keeps attributes specified in the `instance_variables_only`, `acc
 
 `accessors`, `writers` and `readers` are self explanatory and any symbol passed to it will be made an `attr_accessor`, `attr_writer` or `attr_reader`.
 
-`instance_variables_only` is here in case the including class needs access to a specific key in the raw_input but does not want to make this a public method (accessor/reader/writer). It creates an instance variable for the symbol/string passed in whose value is the value under that key in the raw_input. See the `Ghost` class further down for an example of how it is used.
+`instance_variables_only` is here in case the including class needs access to a specific key in the raw_input but does not want to make this a public method (accessor/reader/writer). It creates an instance variable for the symbol passed in whose value is the value under that key in the raw_input. See the `Ghost` class further down for an example of how it is used.
 
 ## Usage
 Run this in your terminal:
@@ -183,7 +204,7 @@ In all cases, the input will be converted to a `Hash` with snake case symbols as
 ## Going further
 In this section I'll describe how I used EasyAttrs in a real world production application.
 
-The problem I was trying to solve is the one I described in the [Why EasyAttrs](https://github.com/nozbzh/easy_attrs#why-easyattrs) section (build objects from an API response). More specifically, I had to deal with very large JSON responses from an external API where the application only needed some of the attributes in that JSON and the number of keys in the JSON could change at any time.
+The problem I was trying to solve is the one I described in the [Why EasyAttrs](#why-easyattrs) section (build objects from an API response). More specifically, I had to deal with very large JSON responses from an external API where the application only needed some of the attributes in that JSON and the number of keys in the JSON could change at any time.
 
 The API I was working with let me read and write objects but it had no data validation on writes and returned very large objects on reads. This was inside a Rails application so I wanted ActiveRecord-like behavior. I created a `MyAppBase` class that all my models would inherit from (think `ActiveRecord::Base`) where I included all the modules I needed. It looked roughly like this:
 ```ruby
@@ -251,7 +272,7 @@ class Bunny < MyAppBase
   private
 
   def number_of_ears_must_be_positive
-    if number_of_ears && number_of_ears < 0
+    if number_of_ears && number_of_ears <= 0
       errors.add(:number_of_ears, "must be positive")
     end
   end
